@@ -1,3 +1,4 @@
+# Based on https://github.com/eschweiler/IDAEnhancements/blob/master/InitialAnalysis.py
 # ============================================================================
 # Copyright (c) 2012, Sebastian Eschweiler <advanced(dot)malware<dot>analyst[at]gmail.com>
 # All rights reserved.
@@ -25,110 +26,37 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 # =============================================================================
 
+
 import idaapi, idautils, idc
 
-DEFCOLOR = 0xffffffff
-COLOR_CRYPTO = 0xffd2f8
 COLOR_CALL = 0xffffd0
+call_instructions = [idaapi.MIPS_b, idaapi.MIPS_j, idaapi.MIPS_jal, idaapi.MIPS_jalr]
 
+COLOR_BRANCH = 0xffd0ff
+branch_instructions = [idaapi.MIPS_bgez, idaapi.MIPS_bgezal, idaapi.MIPS_bgezall, idaapi.MIPS_bgezl, idaapi.MIPS_bgtz, idaapi.MIPS_bgtzl, idaapi.MIPS_blez, idaapi.MIPS_blezl, idaapi.MIPS_bltz, idaapi.MIPS_bltzal, idaapi.MIPS_bltzall, idaapi.MIPS_bltzl, idaapi.MIPS_beq, idaapi.MIPS_beql, idaapi.MIPS_bne, idaapi.MIPS_bnel, idaapi.MIPS_bnez, idaapi.MIPS_bnezl, idaapi.MIPS_beqz, idaapi.MIPS_beqzl]
 
-def findUnidentifiedFunctions():
-	# just get all not-function code and convert it to functions
-	next = idaapi.cvar.inf.minEA
-	while next != idaapi.BADADDR:
-		next = idaapi.find_not_func(next, SEARCH_DOWN)
-		flags = idaapi.getFlags(next)
-		if idaapi.isCode(flags):
-			idc.MakeFunction(next)
-
+COLOR_RET = 0xffd0ff
+ret_instructions = [idaapi.MIPS_jr]
 
 def colorize(addr, color):
 	idaapi.set_item_color(addr, color)
 
-
-def revokeAnalysis():
-	n = idaapi.netnode("$ initialAnalysis", 0, False)
-	
-	if (n == idaapi.BADNODE):	return
-	
-	idx = n.alt1st()
-	while idx != idaapi.BADNODE:
-		colorize(idx, DEFCOLOR)
-		idx = n.altnxt(idx)
-	
-	n.kill()
-	
-	idaapi.refresh_idaview_anyway()
-	
-	
-def setEaInfo(ea, info=""):
-	n = idaapi.netnode("$ initialAnalysis", 0, True)
-	n.set(info)
-
-
-def setFunctionInfo(ea, color, info=""):
-	f = idaapi.get_func(ea)
-	if not f:	return
-	setEaInfo(f.startEA, info)
-	
-	
-def setInfo(ea, color, info=""):
-	colorize(ea, color)
-	setEaInfo(ea, info)
-	setFunctionInfo(ea, info)
-	
-	
-class CryptoTester(object):
-	def __init__(self):
-		self.xor_instructions = [idaapi.NN_xor, idaapi.NN_pxor, idaapi.NN_xorps, idaapi.NN_xorpd]
-		self.other_crypto = [idaapi.NN_ror, idaapi.NN_rol, idaapi.NN_not]
-		
-	def instruction(self, cmd):
-		
-		colorize = False
-		
-		if cmd.itype in self.xor_instructions:
-			# check if different operands
-			if cmd.Op1.type != cmd.Op2.type or cmd.Op1.reg != cmd.Op2.reg or cmd.Op1.value != cmd.Op2.value:
-				colorize = True
-		
-		elif cmd.itype in self.other_crypto:
-			colorize = True
-		
-		if colorize:
-			setInfo(cmd.ea, COLOR_CRYPTO, "crypto")
-
-
-class CallTester(object):
-	def __init__(self):
-		self.call_instructions = [idaapi.NN_call, idaapi.NN_callfi, idaapi.NN_callni]
-		
-	def instruction(self, cmd):
-		if cmd.itype in self.call_instructions:
-			setInfo(cmd.ea, COLOR_CALL)
-
-
 def iterateInstructions():
 	next = 0
 	while next != idaapi.BADADDR:
-		
+
 		# get next instruction
 		next = idc.NextHead(next)
-		
+
 		idaapi.decode_insn(next)
-		for handlers in InstructionCallbacks:
-			handlers.instruction(idaapi.cmd)
+		if idaapi.cmd.itype in call_instructions:
+			colorize(idaapi.cmd.ea, COLOR_CALL)
 
+		if idaapi.cmd.itype in branch_instructions:
+			colorize(idaapi.cmd.ea, COLOR_BRANCH)
 
-### main ###
-revokeAnalysis()
-
-# find unidentified functions
-findUnidentifiedFunctions()
-
-InstructionCallbacks = []
-InstructionCallbacks.append(CryptoTester())
-InstructionCallbacks.append(CallTester())
+		if idaapi.cmd.itype in ret_instructions:
+			colorize(idaapi.cmd.ea, COLOR_RET)
 
 iterateInstructions()
 
